@@ -54,14 +54,20 @@ class Api(object):
                   flow_id=None, 
                   order_by='updated',
                   before=None,
-                  after=None):
+                  after=None,
+                  search_term=None):
         data = {'posts': { 'order': '{0}_at desc'.format(order_by),
                            'limit': min(limit, 100),
                            'include': ['user', 'files'] }}
         post_params = data["posts"]
 
-        # TODO: Raise exception for invalid order_by value
-        # TODO: Check valid datetime object
+        if order_by not in ['updated', 'created']:
+            raise ValueError("order_by must be one of 'updated', 'created'")
+
+        if search_term:
+            data['posts']['keywords'] = search_term
+
+        # TODO: Allow before and after to express inclusive operator
         if before:
             post_params['{0}_at'.format(order_by)] = {'<': 
                                                       iso8601.tostring(before)}
@@ -83,8 +89,21 @@ class Api(object):
         response = self._requester.api_request(data)
         return self._merge_post_data(response)
 
-    def search(self):
-        return
+    def search(self,
+               search_term,
+               limit=30, 
+               include_comments=True, 
+               flow_id=None, 
+               order_by='updated',
+               before=None,
+               after=None):
+        return get_posts(search_term=search_term,
+                         limit=limit,
+                         flow_id=flow_id,
+                         include_comments=include_comments,
+                         order_by=order_by,
+                         before=before,
+                         after=after)
 
     def get_files(self):
         return
@@ -108,20 +127,25 @@ class Api(object):
     def _merge_post_data(self, data):
         posts =  dict((post['id'], self._get_post_class(post['post_type']).from_json(post)) for post in data['posts'])
         users = dict((user['id'], User.from_json(user)) for user in data['users'])
-        comments = dict((comment['id'], Comment.from_json(comment)) for comment in data['comments'])
         files = dict((file['id'], File.from_json(self._requester, file)) for file in data['files'])
 
-        for comment in comments.itervalues():
-            comment.user = users[comment.user_id]
+        has_comments = 'comments' in data
+
+        if has_comments:
+            comments = dict((comment['id'], Comment.from_json(comment)) for comment in data['comments'])
+            for comment in comments.itervalues():
+                comment.user = users[comment.user_id]
 
         for post in posts.itervalues():
             post.user = users[post.user_id]
-            post.comments = [comments[id] for id in post.reply_ids]
             post.files = [files[id] for id in post.file_ids]
+
+            if has_comments:
+                post.comments = [comments[id] for id in post.reply_ids]
+
 
         return posts.values()
         
-
     def _get_post_class(self, type):
         types = {
             'image': ImagePost,
