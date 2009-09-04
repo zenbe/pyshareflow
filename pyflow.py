@@ -1,6 +1,8 @@
 from datetime import datetime
 from xml.utils import iso8601
+import StringIO
 import collections
+import gzip
 import json
 import logging
 import pprint
@@ -331,7 +333,11 @@ class Requester(object):
         try:
             response = urllib2.urlopen(req, timeout=timeout)
             logger.debug(response.info())
-            return response.read()
+            if response.info().getheader('Content-Encoding') == 'gzip':
+                compressed = StringIO.StringIO(response.read())
+                return gzip.GzipFile(fileobj=compressed).read()
+            else:
+                return response.read()
         except urllib2.HTTPError, e:
             print "Error code: ", e.code
         except urllib2.URLError, e:
@@ -354,8 +360,16 @@ class Requester(object):
         logger.debug(req.get_data())
         try:
             response = urllib2.urlopen(req, timeout=timeout)
+            logger.debug(req.header_items())
             logger.debug(response.info())
-            data = json.load(response)
+
+            data = None
+            if response.info().getheader('Content-Encoding') == 'gzip':
+                compressed = StringIO.StringIO(response.read())
+                data = json.load(gzip.GzipFile(fileobj=compressed))
+            else:
+                data = json.load(response)
+
             logger.debug(pprint.pprint(data))
             return data
         except urllib2.HTTPError, e:
