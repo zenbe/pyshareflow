@@ -1,92 +1,79 @@
 from datetime import datetime
-import xml.utils.iso8601 as iso8601
+from xml.utils import iso8601
+import collections
 import json
 import logging
 import pprint
+import re
 import urllib
 import urllib2
-import re
-
+import uuid
 
 logging.basicConfig(level=logging.DEBUG,
                     format='%(asctime)s %(levelname)s %(message)s')
+
 logger = logging.getLogger("pyflow")
 
 VERSION=2
-BASE_URL='zenbestaging.com'
-USER_AGENT='pyflow APIv{0}'.format(VERSION)
 
-
-urllib2.install_opener(
-    urllib2.build_opener(
-        urllib2.ProxyHandler({'http': 'http://127.0.0.1:8080'})))
+# urllib2.install_opener(
+#     urllib2.build_opener(
+#         urllib2.ProxyHandler({'http': 'http://127.0.0.1:8080'})))
 
 
 class Api(object):
-    def __init__(self, domain, key, version=2, use_ssl=False):
-        self._requester = _Requester(domain, key, version, use_ssl)
+    def __init__(self, server, user_domain, key, version=2, use_ssl=False):
+        self.requester = Requester(server, user_domain, key, version, use_ssl)
 
-    def get_flows(self, limit=30):
-        data = self._requester.api_request({'flows': { 'include':
-                                                           ['users','memberships','invitations'], 
-                                                       'limit': min(limit,100) }
-                              })
-        flows = dict([(flow['id'], Flow.from_json(flow)) for flow in data['flows']])
-        users = dict([(user['id'], User.from_json(user)) for user in data['users']])
-        logger.debug(pprint.pprint(users))
+    def get_flows(self, 
+                  limit=30,                   
+                  order_by='created',
+                  name=None):
+        if order_by not in ['updated', 'created']:
+            raise ValueError("order_by must be one of 'updated', 'created'")
 
-        # Associate users with flows via memberships
-        for m in data['memberships']:
-            user, flow = users[m['user_id']], flows[m['channel_id']]
-            flow.users.append(user)
-            if m['administrator']:
-                flow.administrator = user
-                         
-        # Add invitations
-        for i in data['invitations']:
-            flows[i['channel_id']].invitations.append(Invitation(i['id'], i['email_address']))
-            
-        return flows.values()
+        query = Query('flows')
+        query.include = ['users','memberships','invitations']
+        query.limit = min(limit, 100)
+        query.order = '{0}_at desc'.format(order_by)
 
+        if name:
+            query.name = name
+
+        response = self.requester.api_query(query)
+
+        return self._merge_flow_data(response)
+        
     def get_posts(self, 
                   limit=30, 
                   include_comments=True, 
                   flow_id=None, 
-                  order_by='updated',
+                  order_by='created',
                   before=None,
                   after=None,
                   search_term=None):
-        data = {'posts': { 'order': '{0}_at desc'.format(order_by),
-                           'limit': min(limit, 100),
-                           'include': ['user', 'files'] }}
-        post_params = data["posts"]
 
         if order_by not in ['updated', 'created']:
             raise ValueError("order_by must be one of 'updated', 'created'")
 
-        if search_term:
-            data['posts']['keywords'] = search_term
-
-        # TODO: Allow before and after to express inclusive operator
-        if before:
-            post_params['{0}_at'.format(order_by)] = {'<': 
-                                                      iso8601.tostring(before)}
-        if after:
-            condition = {'>' : iso8601.tostring(after)}
-            key = '{0}_at'.format(order_by)
-
-            if key in post_params:
-                post_params[key].update(condition)
-            else:
-                post_params[key] = condition
-
-        if include_comments:
-            post_params['include'].append('comments')
+        query = Query('posts')
+        query.order = '{0}_at desc'.format(order_by)
+        query.limit = min(limit, 100)
+        query.include = ['user', 'files']
 
         if flow_id:
-            post_params['flow_id'] = {'in': flow_id}
+            query.flow_id = {'in': flow_id}
 
-        response = self._requester.api_request(data)
+        if search_term:
+            query.keywords = search_term
+
+        if include_comments:
+            query.include.append('comments')
+
+        self._add_time_params(query, order_by, before, after)
+
+        response = self.requester.api_query(query)
+
         return self._merge_post_data(response)
 
     def search(self,
@@ -94,86 +81,270 @@ class Api(object):
                limit=30, 
                include_comments=True, 
                flow_id=None, 
-               order_by='updated',
+               order_by='created',
                before=None,
                after=None):
-        return get_posts(search_term=search_term,
-                         limit=limit,
-                         flow_id=flow_id,
-                         include_comments=include_comments,
-                         order_by=order_by,
-                         before=before,
-                         after=after)
 
-    def get_files(self):
-        return
 
-    def create_flow(self):
-        return
-    
-    def invite_users(self):
-        return
+        return self.get_posts(search_term=search_term,
+                              limit=limit,
+                              include_comments=include_comments,
+                              flow_id=flow_id,
+                              order_by=order_by,
+                              before=before,
+                              after=after)
 
-    def create_post(self):
-        return
+    def create_flow(self, name):
+        update = Update('flows')
+        update.name = name
+        update.id = str(uuid.uuid4())
 
-    def create_comment(self):
-        return
+        response = self.requester.api_update(update)
 
-    # Do we need this?
-    def upload(self):
-        return
+        return Flow.from_json(response['flows'][0])
+
+    def update_flow_name(self, name, flow_id):
+        update = Update('flows')
+        update.name = name
+        update.id = flow_id
+
+        response = self.requester.api_update(update)
+
+        return Flow.from_json(response['flows'][0])
+
+    def delete_flow(self, flow_id):
+        update = Update('flows')
+        update.id = flow_id
+        update._removed = True
+
+        response = self.requester.api_update(update)
+
+    def create_post(self, flow_id, content):
+        update = Update('posts')
+        update.flow_id = flow_id
+        update.content = content
+        update.id = str(uuid.uuid4())
+
+        response = self.requester.api_update(update)
+
+        return Post.from_json(response['posts'][0])
+
+    def update_post(self, post_id, content):
+        update = Update('posts')
+        update.id = post_id
+        update.content = content
+
+        response = self.requester.api_update(update)
+
+        return Post.from_json(response['posts'][0])
+
+    def delete_post(self, post_id):
+        update = Update('posts')
+        update.id = post_id
+        update._removed = True
+
+        response = self.requester.api_update(update)
+
+    def create_invitations(self, flow_id, invitees):
+        if isinstance(invitees, str):
+            invitees = [invitees]
+
+        update = Update('flows')
+        update.invite = invitees
+        update.id = flow_id
+
+        response = self.requester.api_update(update)
+
+        return Flow.from_json(response['flows'][0])
+
+    def delete_invitations(self, flow_id, invitees):
+        if isinstance(invitees, str):
+            invitees = [invitees]
+
+        update = Update('flows')
+        update.uninvite = invitees
+        update.id = flow_id
+
+        response = self.requester.api_update(update)
+
+        return Flow.from_json(response['flows'][0])
+
+    def create_comment(self, post_id, content):
+        update = Update('comments')
+        update.post_id = post_id
+        update.id = str(uuid.uuid4())
+        update.content = content
+
+        response = self.requester.api_update(update)
+
+        return Comment.from_json(response['comments'][0])
+
+    def delete_comment(self, comment_id):
+        update = Update('comments')
+        update.id = comment_id
+        update._removed = True
+
+        response = self.requester.api_update(update)
+
+    def _add_time_params(self, query, order_by, before, after):
+        # TODO Allow inclusive, exclusive
+        time_param = {}
+
+        if before:
+            time_param.update({'<': iso8601.tostring(before)})
+
+        if after:
+            time_param.update({'>' : iso8601.tostring(after)})
+
+        if len(time_param) > 0:
+            if order_by == 'updated':
+                query.updated_at = time_param
+            else:
+                query.created_at = time_param
+
+    def _merge_flow_data(self, data):
+        if len(data['flows']) == 0:
+            return []
+        flows = dict([(flow['id'], Flow.from_json(flow)) for flow in data['flows']])
+        users = dict([(user['id'], User.from_json(user)) for user in data['users']])
+
+        if 'posts' in data:
+            posts = self._merge_post_data(data)
+            for post in posts:
+                flows[post.flow_id].posts.append(post)
+
+
+        # Associate users with flows via memberships
+        if 'memberships' in data:
+            for m in data['memberships']:
+                user, flow = users[m['user_id']], flows[m['channel_id']]
+                flow.users.append(user)
+                if m['administrator']:
+                    flow.owner = user
+                         
+        # Add invitations
+        if 'invitations' in data:
+            for i in data['invitations']:
+                flows[i['channel_id']].invitations.append(
+                    Invitation(i['id'], i['email_address']))
+            
+        return flows.values()
+
 
     def _merge_post_data(self, data):
-        posts =  dict((post['id'], self._get_post_class(post['post_type']).from_json(post)) for post in data['posts'])
+        if len(data['posts']) == 0:
+            return []
+
+        posts =  dict((post['id'], self._create_post(post)) for post in data['posts'])
         users = dict((user['id'], User.from_json(user)) for user in data['users'])
-        files = dict((file['id'], File.from_json(self._requester, file)) for file in data['files'])
+        files = None
+        comments = None
 
-        has_comments = 'comments' in data
+        if 'files' in data:
+            files = dict((file['id'], File.from_json(self.requester, file)) for file in data['files'])
 
-        if has_comments:
+        if 'comments' in data:
             comments = dict((comment['id'], Comment.from_json(comment)) for comment in data['comments'])
             for comment in comments.itervalues():
                 comment.user = users[comment.user_id]
 
         for post in posts.itervalues():
             post.user = users[post.user_id]
-            post.files = [files[id] for id in post.file_ids]
+            if files:
+                post.files = [files[id] for id in post.file_ids]
 
-            if has_comments:
+            if comments:
                 post.comments = [comments[id] for id in post.reply_ids]
 
 
         return posts.values()
         
-    def _get_post_class(self, type):
+    def _create_post(self, post_data):
+        type = post_data['post_type']
         types = {
             'image': ImagePost,
             'file': FilePost,
             'video': VideoPost,
             'map': MapPost,
             'message': EmailPost,
+            'html' : HTMLPost,
             'comment': Post
             }
 
         if not type in types:
-            raise LookupError("{0} is not a valid post type".format(type))
+            logger.warn("Could not find post type {0}".format(type))
+            return Post.from_json(post_data)
 
-        return types[type]
-        
+        return types[type].from_json(post_data)
 
-class _Requester(object):
-    def __init__(self, domain, key, version=2, use_ssl=False):
+class Query(dict):
+    def __init__(self, entity):
+        self.__dict__['entity'] = entity
+        self['query'] = {entity : {}}
+
+    def __getattr__(self, name):
+        val = self['query'][self.__dict__['entity']].get(name)
+        if not val:
+            raise AttributeError("Invalid attribute: {0}".format(name))
+        return val
+
+    def __setattr__(self, name, val):
+        self['query'][self.__dict__['entity']][name] = val
+
+
+class Update(dict):
+    def __init__(self, entity):
+        self.__dict__['entity'] = entity
+        self['data'] = {entity: [{}]}
+
+    def __getattr__(self, name):
+       val = self['data'][self.__dict__['entity']][0].get(name)
+       if not val:
+           raise AttributeError("Invalid attribute: {0}".format(name))
+       return val
+
+    def __setattr__(self, name, val):
+        self['data'][self.__dict__['entity']][0][name] = val
+
+class Requester(object):
+    USER_AGENT='pyflow APIv{0}'.format(VERSION)
+
+    def __init__(self, server, user_domain, key, version=VERSION, use_ssl=False):
         protocol = 'https' if use_ssl else 'http'         
-        self.base_url = "{0}://{1}/{2}".format(protocol, BASE_URL, domain)
+        self.base_url = "{0}://{1}/{2}".format(protocol, server, user_domain)
         self.api_url = "{0}/shareflow/api/v{1}.json".format(self.base_url, version)
         self.key = key
 
-    def api_request(self, params, timeout=10):
-        params = { 'query' : params,
-                   'key' : self.key }
+    def api_update(self, update, timeout=10):
+        update['key'] = self.key
+        return self._request(update, timeout)
+
+    def api_query(self, query, timeout=10):
+        query['key'] = self.key
+        return self._request(query, timeout)
+
+    def content_request(self, path, timeout=10):
+        req = urllib2.Request(self.create_url(path), 
+                              headers={'User-Agent': Requester.USER_AGENT,
+                                       'Accept-Encoding': 'gzip'})
+        logger.debug(req.get_full_url())
+        try:
+            response = urllib2.urlopen(req, timeout=timeout)
+            logger.debug(response.info())
+            return response.read()
+        except urllib2.HTTPError, e:
+            print "Error code: ", e.code
+        except urllib2.URLError, e:
+            print e.reason
+
+    def create_url(self, path):
+        return "{0}{1}?key={2}".format(self.base_url, path, self.key)
+
+        
+
+    def _request(self, params, timeout=10):
         req = urllib2.Request(self.api_url, json.dumps(params),
-                              {'User-Agent': USER_AGENT,
+                              {'User-Agent': Requester.USER_AGENT,
                                'Accept-Encoding': 'gzip',
                                'Accept': 'application/json',
                                'Content-Type': 'application/json; charset=UTF-8'})
@@ -192,22 +363,6 @@ class _Requester(object):
         except urllib2.URLError, e:
             print e.reason
 
-    def content_request(self, path, timeout=10):
-        req = urllib2.Request(self.create_url(path), 
-                              headers={'User-Agent': USER_AGENT,
-                                       'Accept-Encoding': 'gzip'})
-        logger.debug(req.get_full_url())
-        try:
-            response = urllib2.urlopen(req, timeout=timeout)
-            logger.debug(response.info())
-            return response.read()
-        except urllib2.HTTPError, e:
-            print "Error code: ", e.code
-        except urllib2.URLError, e:
-            print e.reason
-
-    def create_url(self, path):
-        return "{0}{1}?key={2}".format(self.base_url, path, self.key)
 
         
 
@@ -215,6 +370,7 @@ class Flow(object):
     _VALID_ATTRIBUTES = set([
             'id',
             'name',
+            'email_address',
             'created_at',
             'updated_at',
             'default_channel',
@@ -236,16 +392,18 @@ class Flow(object):
                  rss_url=None):
         self.id = id
         self.name = name
+        self.email_address = email_address
         self.created_at = iso8601.parse(created_at) if created_at else None
         self.updated_at = iso8601.parse(updated_at) if updated_at else None
-        self.default_channel = default_channel
+        self.is_default = default_channel
         self.owner_name = owner_name
         self.quota_percentage = quota_percentage
         self.quota_count = int(quota_count)
         self.rss_url = rss_url
         self.users = list()
         self.invitations = list()
-        self.administrator = None
+        self.owner = None
+
                      
     def __hash__(self):
         return self.id.__hash__()
@@ -297,7 +455,7 @@ class User(object):
         self.last_name = last_name
         self.email = email
         self.avatar_url = avatar_url
-        self.online = online
+        self.is_online = online
         self.role = role
         self.time_zone = time_zone
 
@@ -366,7 +524,7 @@ class File(object):
                  created_at=None,
                  updated_at=None
                  ):
-        self.requester = requester
+        self.__requester = requester
         self.__url = url
         self.id = id
         self.file_name = file_name
@@ -383,10 +541,10 @@ class File(object):
 
     @property
     def url(self):
-        return self.requester.create_url(self.__url)
+        return self.__requester.create_url(self.__url)
 
     def retrieve(self):
-        return self.requester.content_request(self.__url)
+        return self.__requester.content_request(self.__url)
 
     def __hash__(self):
         return self.id.__hash__()
@@ -515,7 +673,7 @@ class Post(object):
     def is_video(self):
         return False
 
-    def is_email(self):
+    def is_html(self):
         return False
                  
     def __hash__(self):
@@ -571,6 +729,10 @@ class ImagePost(_EmbedPost):
 class VideoPost(_EmbedPost):
     def is_video(self):
         return False
+
+class HTMLPost(Post):
+    def is_html(self):
+        return True
 
 
 class EmailPost(Post):
