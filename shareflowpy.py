@@ -10,6 +10,7 @@ import re
 import urllib
 import urllib2
 import uuid
+import httplib
 
 logging.basicConfig(level=logging.DEBUG,
                     format='%(asctime)s %(levelname)s %(message)s')
@@ -207,19 +208,24 @@ class Api(object):
     def _merge_flow_data(self, data):
         if len(data['flows']) == 0:
             return []
-        flows = dict([(flow['id'], Flow.from_json(flow)) for flow in data['flows']])
-        users = dict([(user['id'], User.from_json(user)) for user in data['users']])
+
+        # This list preserves server order requested by the user
+        flows = [Flow.from_json(flow) for flow in data['flows']]
+        # Index the flows to merge the data
+        flows_idx = dict((flow.id, flow) for flow in flows)
+
+        users = dict((user['id'], User.from_json(user)) for user in data['users'])
 
         if 'posts' in data:
             posts = self._merge_post_data(data)
             for post in posts:
-                flows[post.flow_id].posts.append(post)
+                flows_idx[post.flow_id].posts.append(post)
 
 
         # Associate users with flows via memberships
         if 'memberships' in data:
             for m in data['memberships']:
-                user, flow = users[m['user_id']], flows[m['channel_id']]
+                user, flow = users[m['user_id']], flows_idx[m['channel_id']]
                 flow.users.append(user)
                 if m['administrator']:
                     flow.owner = user
@@ -227,18 +233,20 @@ class Api(object):
         # Add invitations
         if 'invitations' in data:
             for i in data['invitations']:
-                flows[i['channel_id']].invitations.append(
+                flows_idx[i['channel_id']].invitations.append(
                     Invitation(i['id'], i['email_address']))
             
-        return flows.values()
+        return flows
 
 
     def _merge_post_data(self, data):
         if len(data['posts']) == 0:
             return []
 
-        posts =  dict((post['id'], self._create_post(post)) for post in data['posts'])
+        # This list preserves the server order requested by the user
+        posts = [self._create_post(post) for post in data['posts']]
         users = dict((user['id'], User.from_json(user)) for user in data['users'])
+
         files = None
         comments = None
 
@@ -250,7 +258,7 @@ class Api(object):
             for comment in comments.itervalues():
                 comment.user = users[comment.user_id]
 
-        for post in posts.itervalues():
+        for post in posts:
             post.user = users[post.user_id]
             if files:
                 post.files = [files[id] for id in post.file_ids]
@@ -259,7 +267,7 @@ class Api(object):
                 post.comments = [comments[id] for id in post.reply_ids]
 
 
-        return posts.values()
+        return posts
         
     def _create_post(self, post_data):
         type = post_data['post_type']
@@ -269,7 +277,8 @@ class Api(object):
             'video': VideoPost,
             'map': MapPost,
             'message': EmailPost,
-            'html' : HTMLPost,
+            'html': HTMLPost,
+            'event': EventPost,
             'comment': Post
             }
 
@@ -317,68 +326,73 @@ class Requester(object):
         self.api_url = "{0}/shareflow/api/v{1}.json".format(self.base_url, version)
         self.key = key
 
-    def api_update(self, update, timeout=10):
+    def api_update(self, update, timeout=60):
         update['key'] = self.key
         return self._request(update, timeout)
 
-    def api_query(self, query, timeout=10):
+    def api_query(self, query, timeout=60):
         query['key'] = self.key
         return self._request(query, timeout)
 
-    def content_request(self, path, timeout=10):
+    def content_request(self, path, timeout=300):
         req = urllib2.Request(self.create_url(path), 
                               headers={'User-Agent': Requester.USER_AGENT,
                                        'Accept-Encoding': 'gzip'})
-        logger.debug(req.get_full_url())
-        try:
-            response = urllib2.urlopen(req, timeout=timeout)
-            logger.debug(response.info())
-            if response.info().getheader('Content-Encoding') == 'gzip':
-                compressed = StringIO.StringIO(response.read())
-                return gzip.GzipFile(fileobj=compressed).read()
-            else:
-                return response.read()
-        except urllib2.HTTPError, e:
-            print "Error code: ", e.code
-        except urllib2.URLError, e:
-            print e.reason
+        
+        response = urllib2.urlopen(req, timeout=timeout)
+        return self._read_response(response)
 
     def create_url(self, path):
         return "{0}{1}?key={2}".format(self.base_url, path, self.key)
 
-        
-
-    def _request(self, params, timeout=10):
+    def _request(self, params, timeout=60):
         req = urllib2.Request(self.api_url, json.dumps(params),
                               {'User-Agent': Requester.USER_AGENT,
                                'Accept-Encoding': 'gzip',
                                'Accept': 'application/json',
                                'Content-Type': 'application/json; charset=UTF-8'})
-
-        
-        logger.debug(req.get_full_url())
-        logger.debug(req.get_data())
         try:
             response = urllib2.urlopen(req, timeout=timeout)
-            logger.debug(req.header_items())
-            logger.debug(response.info())
+        except urllib2.HTTPError as error:
+            self._check_error(error)
+            raise error
 
-            data = None
-            if response.info().getheader('Content-Encoding') == 'gzip':
-                compressed = StringIO.StringIO(response.read())
-                data = json.load(gzip.GzipFile(fileobj=compressed))
-            else:
-                data = json.load(response)
+        data = self._read_response(response)
+            
+        return data
 
-            logger.debug(pprint.pprint(data))
-            return data
-        except urllib2.HTTPError, e:
-            print "Error code: ", e.code
-        except urllib2.URLError, e:
-            print e.reason
-
-
+    def _check_error(self, error):
+        exception_map = { httplib.BAD_REQUEST : InvalidRequest,
+                          httplib.FORBIDDEN : ResourceException,
+                          httplib.INTERNAL_SERVER_ERROR : ServiceError }
         
+        if error.code not in exception_map:
+            return
+
+        # Try to get the server message
+        msg = None
+        if error.info().getheader('Content-Type').find('application/json') != -1:
+            data = self._read_response(error)
+            msg = data.get('message') or error.message
+        else:
+            msg = error.message
+        
+        # Raise a custom exception
+        raise exception_map[response.code](msg)
+
+    def _read_response(self, response):
+        fp = None
+        if response.info().getheader('Content-Encoding') == 'gzip':
+            fp = gzip.GzipFile(fileobj=StringIO.StringIO(response.read()))
+        else:
+            fp = response
+
+        if response.info().getheader('Content-Type').find('application/json') != -1:
+            return json.load(fp)
+        else:
+            return fp.read()
+
+##### Model Classes #####        
 
 class Flow(object):
     _VALID_ATTRIBUTES = set([
@@ -546,7 +560,7 @@ class File(object):
         self.post_id = post_id
         self.content_type = content_type
         self.is_image = is_image
-        self.meta_data = None if meta_data is None else eval(meta_data)
+        self.meta_data = None if meta_data is None else json.loads(meta_data)
         self.width = int(width) if width else None
         self.height = int(height) if height else None
         self.thumbnail_url = thumbnail_url
@@ -600,6 +614,7 @@ class Comment(object):
                  updated_at=None):
         self.id = id
         self.flow_id = flow_id
+        self.flow_name = flow_name
         self.reply_to = reply_to
         self.content = content
         self.created_at = iso8601.parse(created_at) if created_at else None
@@ -626,6 +641,7 @@ class Comment(object):
         return cls(**dict([(str(k),v) for k,v in data.iteritems() 
                            if k in cls._VALID_ATTRIBUTES]))
 
+##### Posts #####
 
 class Post(object):
     _VALID_ATTRIBUTES = set([
@@ -656,6 +672,7 @@ class Post(object):
                  updated_at=None):
         self.id = id
         self.flow_id = flow_id
+        self.flow_name = flow_name
         self.post_type = post_type
         self.content = content
         self.star = star
@@ -688,6 +705,9 @@ class Post(object):
         return False
 
     def is_html(self):
+        return False
+
+    def is_event(self):
         return False
                  
     def __hash__(self):
@@ -758,7 +778,8 @@ class EmailPost(Post):
     def msg(self):
         if not self.__msg:
             for f in self.files:
-                if f.meta_data and 'recipient' in f.meta_data:
+                if f.meta_data and \
+                        f.meta_data.get('attachment_type') == 'email_message':
                     self.__msg = f
                     break
         return self.__msg
@@ -777,5 +798,35 @@ class EmailPost(Post):
 
     def is_email(self):
         return True
+
+class EventPost(Post):
+    def __init__(self, **kwargs):
+        Post.__init__(self, **kwargs)
+        self.__event = None
+    
+    @property
+    def event(self):
+        if not self.__event:
+            for f in self.files:
+                if f.meta_data and \
+                        f.meta_data.get('attachment_type') == 'event':
+                    self.__event = f
+                    break
+        return self.__event
+
+    def get_ics_content(self):
+        return self.event.retrieve()
+
+    def is_event(self):
+        return True
+
             
-            
+##### Exceptions #####
+class ResourceException(Exception):
+    pass
+
+class InvalidRequest(Exception):
+    pass
+
+class ServiceError(Exception):
+    pass

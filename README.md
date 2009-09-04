@@ -77,10 +77,11 @@ as described below.
   now
 * `time_zone`: The time zone string for the user
 
+  
 #### Invitation attributes ####
 
 * `id`: The uuid of the invitation
-* `email`: The email address for the invitation
+* `Email`: The email address for the invitation
 
 ### Creating flows ###
 
@@ -166,6 +167,7 @@ common to all posts.
 
 * `id`: The post uuid
 * `flow_id`: The id of the flow the post is part of
+* `flow_name`: The name of the flow the post is part of
 * `post_type`: A string describing the type of post
 * `content`: The post content. May be empty for some post types
 * `star`: The star indicator
@@ -177,6 +179,7 @@ common to all posts.
 * `files`: A `list` of `File` objects associated with this post
 * `comments`: A `list` of `Comment` objects associated with this post
 * `user`: A `User` object representing the user responsible for this post
+  
 
 #### Post Subtypes ####
 
@@ -189,6 +192,7 @@ Returned when a map was posted.
 * `get_address()`: Returns the address of the map as a string.
 * `get_coordinates()`: Returns the latitude and longitude coordinates as
   a tuple.
+  
 
 ##### FilePost #####
 
@@ -231,6 +235,18 @@ The following methods are also available:
 * `get_subject()`: Returns the subject of the message.
 * `get_summary()`: Returns a 255 character preview of the message.
 * `get_msg_content()`: Downloads the full content of the message.
+  
+
+##### EventPost #####
+
+Indicates the post is an event. This type of post has a `event`
+attribute, which points to a `File` object representing the ICS
+representation of the event.
+
+The following methods are also available:
+
+* `get_ics_content()`: Returns the ICS representation of the event
+  
 
 #### Detecing Post Types ####
 
@@ -244,6 +260,8 @@ posts implement the following methods, which return a `boolean`:
 * `is_image()`
 * `is_video()`
 * `is_html()`
+* `is_event()`
+  
 
 #### File attributes ####
 
@@ -269,6 +287,7 @@ The following are attributes of `File` objects:
 Methods:
 
 * `retrieve()`: Returns the retrieved file content.
+  
 
 #### Comment attributes ####
 
@@ -277,6 +296,7 @@ attributes:
 
 * `id`: The uuid of the comment
 * `flow_id`: The id of the flow this comment is associated with
+* `flow_name`: The name of the flow the comment is associated with
 * `reply_to`: The post id this comment is a reply to
 * `content`: The content of the comment
 * `created_at`: A `datetime` object representing the creation time
@@ -309,23 +329,37 @@ with the given id.
 
 ## Exceptions ##
 
-TODO
+Any API method may throw an `HTTPException` when there are
+HTTP-related errors.
+
+There are 3 special exceptions:
+
+### ResourceException ###
+
+This is thrown if you are over-quota or are attempting to invite too
+many users.
+
+### InvalidRequest ###
+
+This is thrown if you specify an invalid query, or try to modify an
+read-only attribute.
+
+### ServiceError ###
+
+This happens when there is an internal server error (HTTP code 500) on
+our part.
 
 ## TODO ##
 
-* Implement EventPost
 * Add offset, before, after params to get_flows
 * Implement offset for posts
 * Implement file uploads
 * Implement removing a user (not invitee) from a flow
 * Implement a streaming file retrieve() operation
 * Implement permaline attribute for Flows, Posts, Comments
-* Whitelist 'flow_name' attribute for Posts and Comments
-* Error handling
+* __str__ method for Post
 * Offset support
-* Better ordering
+* Add operation to post events
 * Docstrings
 * Unit tests
-
-
 
