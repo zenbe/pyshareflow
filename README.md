@@ -7,7 +7,7 @@ service.
 
 The library was coded against Python 2.6.2.
 
-Currently pyflow requires an API key. An API key can be obtained by
+Currently shareflowpy requires an API key. An API key can be obtained by
 sending a request to Zenbe via our [contact
 form](http://zenbe.com/contact).
 
@@ -20,8 +20,8 @@ interface with the user as the author.
 
 ### Creating an API instance ###
 
-    >>> import pyflow
-    >>>	api = pyflow.Api('biz.zenbe.com', 'yourdomain.zenbe.com', 'your key')
+    >>> import shareflowpy
+    >>>	api = shareflowpy.Api('biz.zenbe.com', 'yourdomain.zenbe.com', 'your key')
 
 ### Retrieving Flows ###
 
