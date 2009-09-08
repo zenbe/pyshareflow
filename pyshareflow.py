@@ -15,7 +15,7 @@ import httplib
 logging.basicConfig(level=logging.DEBUG,
                     format='%(asctime)s %(levelname)s %(message)s')
 
-logger = logging.getLogger("shareflowpy")
+logger = logging.getLogger("pyshareflow")
 
 VERSION=2
 
@@ -318,7 +318,7 @@ class Update(dict):
         self['data'][self.__dict__['entity']][0][name] = val
 
 class Requester(object):
-    USER_AGENT='shareflowpy APIv{0}'.format(VERSION)
+    USER_AGENT='pyshareflow APIv{0}'.format(VERSION)
 
     def __init__(self, server, user_domain, key, version=VERSION, use_ssl=False):
         protocol = 'https' if use_ssl else 'http'         
