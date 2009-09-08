@@ -5,6 +5,9 @@ import collections
 import gzip
 import json
 import logging
+import mimetools
+import mimetypes
+import os.path
 import pprint
 import re
 import urllib
@@ -19,9 +22,9 @@ logger = logging.getLogger("pyshareflow")
 
 VERSION=2
 
-# urllib2.install_opener(
-#     urllib2.build_opener(
-#         urllib2.ProxyHandler({'http': 'http://127.0.0.1:8080'})))
+urllib2.install_opener(
+    urllib2.build_opener(
+        urllib2.ProxyHandler({'http': 'http://127.0.0.1:8080'})))
 
 
 class Api(object):
@@ -189,6 +192,40 @@ class Api(object):
 
         response = self.requester.api_update(update)
 
+    def add_files_to_post(self, file_paths, post_id):
+        if isinstance(file_paths, str):
+            file_paths = [file_paths]
+
+        if len(file_paths) == 0:
+            raise ValueError("file_paths must not be empty")
+
+        update = Update('posts')
+        update.id = post_id
+        update.files = [{'part_id': 'file_' + str(uuid.uuid4()),
+                         'file_path': file} for file in file_paths]
+
+        response = self.requester.api_update_with_files(update)
+
+    def add_files_to_flow(self, file_paths, flow_id, comment=None):
+        if isinstance(file_paths, str):
+            file_paths = [file_paths]
+
+        if len(file_paths) == 0:
+            raise ValueError("file_paths must not be empty")
+
+        update = Update('posts')
+        update.flow_id = flow_id
+        update.id = str(uuid.uuid4())
+
+        # TODO: Comment not working on server.
+        if comment:
+            update.content = comment
+
+        update.files = [{'part_id': 'file_' + str(uuid.uuid4()),
+                         'file_path': file} for file in file_paths]
+    
+        response = self.requester.api_update_with_files(update)
+
     def _add_time_params(self, query, order_by, before, after):
         # TODO Allow inclusive, exclusive
         time_param = {}
@@ -330,6 +367,9 @@ class Requester(object):
         update['key'] = self.key
         return self._request(update, timeout)
 
+    def api_update_with_files(self, update, timeout=300):
+        return self._request_with_files(update, timeout)
+
     def api_query(self, query, timeout=60):
         query['key'] = self.key
         return self._request(query, timeout)
@@ -345,12 +385,13 @@ class Requester(object):
     def create_url(self, path):
         return "{0}{1}?key={2}".format(self.base_url, path, self.key)
 
-    def _request(self, params, timeout=60):
-        req = urllib2.Request(self.api_url, json.dumps(params),
-                              {'User-Agent': Requester.USER_AGENT,
-                               'Accept-Encoding': 'gzip',
-                               'Accept': 'application/json',
-                               'Content-Type': 'application/json; charset=UTF-8'})
+    def _request(self, params, timeout=60, requestobj=None):
+
+        req = requestobj or urllib2.Request(self.api_url, json.dumps(params),
+                                            {'User-Agent': Requester.USER_AGENT,
+                                             'Accept-Encoding': 'gzip',
+                                             'Accept': 'application/json',
+                                             'Content-Type': 'application/json; charset=UTF-8'})
         try:
             response = urllib2.urlopen(req, timeout=timeout)
         except urllib2.HTTPError as error:
@@ -360,6 +401,49 @@ class Requester(object):
         data = self._read_response(response)
             
         return data
+
+    def _request_with_files(self, update, timeout=300):
+
+        boundary = mimetools.choose_boundary()
+        crlf = '\r\n'
+        tmp = []
+        tmp.append('--' + boundary)
+        tmp.append('Content-Disposition: form-data; name="key"')
+        tmp.append('Content-Type: application/json; charset=UTF-8')
+        tmp.append('')
+        tmp.append(self.key)
+
+        tmp.append('--' + boundary)
+        tmp.append('Content-Disposition: form-data; name="data"')
+        tmp.append('Content-Type: application/json; charset=UTF-8')
+        tmp.append('')
+        tmp.append(json.dumps(update['data']))
+        
+        for f in update.files:
+            id, path = f['part_id'], f['file_path']
+            tmp.append('--' + boundary)
+            tmp.append('Content-Disposition: form-data; name="{0}"; filename="{1}"'
+                       .format(id, os.path.basename(path)))
+            tmp.append('Content-Type: {0}'.format(
+                    mimetypes.guess_type(path)[0] or 'application/octet-stream'))
+            tmp.append('')
+            tmp.append(open(path, 'r').read())
+
+        tmp.append('--' + boundary + '--')
+        tmp.append('')
+        
+        body = crlf.join(tmp)
+        content_type = 'multipart/form-data; boundary={0}'.format(boundary)
+
+        request = urllib2.Request(self.api_url, body,
+                                            {'User-Agent': Requester.USER_AGENT,
+                                             'Accept-Encoding': 'gzip',
+                                             'Accept': 'application/json',
+                                             'Content-Type': content_type,
+                                             'Content-Length': str(len(body))})
+
+        return self._request(None, timeout=timeout, requestobj=request)
+                       
 
     def _check_error(self, error):
         exception_map = { httplib.BAD_REQUEST : InvalidRequest,

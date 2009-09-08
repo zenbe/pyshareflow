@@ -305,6 +305,12 @@ attributes:
 * `user`: The `User` object of the user associated with this comment
 * `post`: The `Post` this comment is in reply to
 
+### Creating a Post ###
+
+    >>> api.create_post('flow_id', 'This is some post content.')
+
+Creates a post on the flow given by the id.
+
 ### Modifying Posts ###
 
     >>> api.update_post('post_id', 'New post content.')
