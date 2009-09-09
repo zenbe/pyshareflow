@@ -16,6 +16,8 @@ only sees the flows and content they have access to. It also means
 that any posts or comments made via the API show up in the web
 interface with the user as the author.
 
+
+
 ## Operations ##
 
 ### Creating an API instance ###
@@ -28,7 +30,7 @@ interface with the user as the author.
     >>> flows = api.get_flows()
 
 Retrieves an array of Flow objects, ordered by created at time. There
-is a default limit of 30 flows, and a max limit of 100 flows.
+his a default limit of 30 flows, and a max limit of 100 flows.
 
     >>> flows = api.get_flows(limit=100, order_by='created')
 
@@ -39,6 +41,11 @@ Returns up to 100 flows, ordered by when the flow was last updated.
     'My Shareflow'
 
 Returns a list of all flows matching a particular name.
+
+    >>> flows = api.get_flow_by_name('My Shareflow')
+
+A convenience method that returns a single flow matching the given
+name. If multiple flows match only the first will be returned.
 
 #### Flow attributes ####
 
@@ -66,8 +73,8 @@ as described below.
 
 #### User attributes ####
 
-* `id`: An `int` id of the user
-* `login`: The login name of the user. Typically the same as the email
+* `id`: An `int` id of the user `login`: The login name of the
+*user. Typically the same as the email
   address.
 * `first_name`: The first name
 * `last_name`: The last name
@@ -333,6 +340,26 @@ Deletes the comment with the given id.
 Permanently deletes the post (and any associated files and comments)
 with the given id.
 
+### Uploading Files ###
+
+    >>> api.add_files_to_flow(r'C:\docs\planning.doc', 'flow_id')
+
+Adds a file to the flow given by the id.
+
+    >>> api.add_files_to_flow([r'C:\docs\planning.doc', r'C:\docs\schedule.xls'], 'flow_id')
+
+Adds multiple files to the flow given by the id.
+
+    >>> api.add_files_to_flow([r'C:\docs\planning.doc', r'C:\docs\schedule.xls'], 'flow_id',
+    ...     comment='Here are the files for the upcoming meeting.')
+
+Adds multiple files to the flow given by the id along with a comment
+that will appear with the files.
+
+    >>> api.add_files_to_post(r'C:\docs\planning.doc', 'post_id')
+
+Adds file(s) to an existing post given by 'post_id'.
+
 ## Exceptions ##
 
 Any API method may throw an `HTTPException` when there are
@@ -357,15 +384,11 @@ our part.
 
 ## TODO ##
 
-* Add offset, before, after params to get_flows
-* Implement offset for posts
-* Implement file uploads
-* Implement removing a user (not invitee) from a flow
+* Sync up documentation
 * Implement a streaming file retrieve() operation
-* Implement permaline attribute for Flows, Posts, Comments
-* __str__ method for Post
-* Offset support
-* Add operation to post events
+* Implement permalink attribute for Flows, Posts, Comments
+* Add event posting
+* Add map posting
 * Docstrings
 * Unit tests
 

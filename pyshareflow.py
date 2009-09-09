@@ -31,30 +31,141 @@ class Api(object):
     def __init__(self, server, user_domain, key, version=2, use_ssl=False):
         self.requester = Requester(server, user_domain, key, version, use_ssl)
 
+
+##### User Methods #####
+
+    def get_users(self, flow_id=None, offset=None):
+        query = None
+
+        if flow_id:
+            query = Query('flows')
+            query.id = flow_id
+            query.include = ['users']
+        else:
+            query = Query('users')
+        
+        if offset:
+            query.offset = offset
+
+        response = self.requester.api_query(query)
+
+        users = None
+
+        if 'users' in response:
+            users = [User.from_json(user) for user in response['users']]
+
+        return users or []
+
+    def get_user(self, user_id):
+        query = Query('users')
+        query.id = user_id
+
+        response = self.requester.api_query(query)
+
+        user = None
+
+        if 'users' in response:
+            user = [User.from_json(user) for user in response['users']][0]
+
+        return user
+
+    def remove_user(self, user_id, flow_id):
+        update = Update('flows')
+        update.id = flow_id
+        update.remove_members = [user_id]
+
+        response = self.requester.api_update(update)
+
+##### Flow Methods #####
+
     def get_flows(self, 
                   limit=30,                   
                   order_by='created',
-                  name=None):
+                  name=None,
+                  offset=None):
         if order_by not in ['updated', 'created']:
             raise ValueError("order_by must be one of 'updated', 'created'")
 
         query = Query('flows')
-        query.include = ['users','memberships','invitations']
+        query.include = ['memberships','invitations']
         query.limit = min(limit, 100)
         query.order = '{0}_at desc'.format(order_by)
 
         if name:
             query.name = name
 
+        if offset:
+            query.offset = offset
+
         response = self.requester.api_query(query)
 
         return self._merge_flow_data(response)
+
+    def get_flow_by_name(self, name):
+        flows = self.get_flows(name=name)
+
+        if len(flows) > 0:
+            return flows[0]
+        else:
+            return None
+
+    def create_flow(self, name):
+        update = Update('flows')
+        update.name = name
+        update.id = str(uuid.uuid4())
+
+        response = self.requester.api_update(update)
+
+        return Flow.from_json(response['flows'][0])
+
+    def update_flow_name(self, name, flow_id):
+        update = Update('flows')
+        update.name = name
+        update.id = flow_id
+
+        response = self.requester.api_update(update)
+
+        return Flow.from_json(response['flows'][0])
+
+    def delete_flow(self, flow_id):
+        update = Update('flows')
+        update.id = flow_id
+        update._removed = True
+
+        response = self.requester.api_update(update)
+
+    def create_invitations(self, flow_id, invitees):
+        if isinstance(invitees, str):
+            invitees = [invitees]
+
+        update = Update('flows')
+        update.invite = invitees
+        update.id = flow_id
+
+        response = self.requester.api_update(update)
+
+        return Flow.from_json(response['flows'][0])
+
+    def delete_invitations(self, flow_id, invitees):
+        if isinstance(invitees, str):
+            invitees = [invitees]
+
+        update = Update('flows')
+        update.uninvite = invitees
+        update.id = flow_id
+
+        response = self.requester.api_update(update)
+
+        return Flow.from_json(response['flows'][0])
+
+##### Post Methods #####
         
     def get_posts(self, 
                   limit=30, 
                   include_comments=True, 
                   flow_id=None, 
                   order_by='created',
+                  offset=None,
                   before=None,
                   after=None,
                   search_term=None):
@@ -62,10 +173,16 @@ class Api(object):
         if order_by not in ['updated', 'created']:
             raise ValueError("order_by must be one of 'updated', 'created'")
 
+        if offset and (before or after):
+            raise InvalidRequest("offset cannot be specified with before or after param")
+
         query = Query('posts')
         query.order = '{0}_at desc'.format(order_by)
         query.limit = min(limit, 100)
-        query.include = ['user', 'files']
+        query.include = ['files']
+        
+        if offset:
+            query.offset = max(offset, 0)
 
         if flow_id:
             query.flow_id = {'in': flow_id}
@@ -100,30 +217,33 @@ class Api(object):
                               before=before,
                               after=after)
 
-    def create_flow(self, name):
-        update = Update('flows')
-        update.name = name
+    def post_files(self, file_paths, flow_id, comment=None):
+        if isinstance(file_paths, str):
+            file_paths = [file_paths]
+
+        if len(file_paths) == 0:
+            raise ValueError("file_paths must not be empty")
+
+        update = Update('posts')
+        update.flow_id = flow_id
         update.id = str(uuid.uuid4())
 
-        response = self.requester.api_update(update)
+        if comment:
+            update.content = comment
 
-        return Flow.from_json(response['flows'][0])
+        response = self.requester.api_update_with_files(update, file_paths)
 
-    def update_flow_name(self, name, flow_id):
-        update = Update('flows')
-        update.name = name
-        update.id = flow_id
+    def add_files_to_post(self, file_paths, post_id):
+        if isinstance(file_paths, str):
+            file_paths = [file_paths]
 
-        response = self.requester.api_update(update)
+        if len(file_paths) == 0:
+            raise ValueError("file_paths must not be empty")
 
-        return Flow.from_json(response['flows'][0])
+        update = Update('posts')
+        update.id = post_id
 
-    def delete_flow(self, flow_id):
-        update = Update('flows')
-        update.id = flow_id
-        update._removed = True
-
-        response = self.requester.api_update(update)
+        response = self.requester.api_update_with_files(update, file_paths)
 
     def create_post(self, flow_id, content):
         update = Update('posts')
@@ -135,13 +255,25 @@ class Api(object):
 
         return Post.from_json(response['posts'][0])
 
-    def update_post(self, post_id, content):
+    def update_post(self, post_id, content=None, file_paths=None):
         update = Update('posts')
         update.id = post_id
-        update.content = content
 
-        response = self.requester.api_update(update)
+        if not (content or file_paths):
+            raise ValueError("content or file_paths can't both be None")
 
+        if content:
+            update.content = content
+
+        response = None
+
+        if file_paths:
+            if isinstance(file_paths, str):
+                file_paths = [file_paths]
+            response = self.requester.api_update_with_files(update, file_paths)
+        else:
+            response = self.requester.api_update(update)
+            
         return Post.from_json(response['posts'][0])
 
     def delete_post(self, post_id):
@@ -151,29 +283,20 @@ class Api(object):
 
         response = self.requester.api_update(update)
 
-    def create_invitations(self, flow_id, invitees):
-        if isinstance(invitees, str):
-            invitees = [invitees]
+##### Comment Methods #####
 
-        update = Update('flows')
-        update.invite = invitees
-        update.id = flow_id
+    def get_comments(self, post_id):
+        query = Query('comments')
+        query.post_id = post_id
+        
+        response = self.requester.api_query(query)
+        
+        comments = None
 
-        response = self.requester.api_update(update)
+        if 'comments' in response:
+            comments = [Comment.from_json(comment) for comment in response['comments']]
 
-        return Flow.from_json(response['flows'][0])
-
-    def delete_invitations(self, flow_id, invitees):
-        if isinstance(invitees, str):
-            invitees = [invitees]
-
-        update = Update('flows')
-        update.uninvite = invitees
-        update.id = flow_id
-
-        response = self.requester.api_update(update)
-
-        return Flow.from_json(response['flows'][0])
+        return comments or []
 
     def create_comment(self, post_id, content):
         update = Update('comments')
@@ -192,39 +315,7 @@ class Api(object):
 
         response = self.requester.api_update(update)
 
-    def add_files_to_post(self, file_paths, post_id):
-        if isinstance(file_paths, str):
-            file_paths = [file_paths]
-
-        if len(file_paths) == 0:
-            raise ValueError("file_paths must not be empty")
-
-        update = Update('posts')
-        update.id = post_id
-        update.files = [{'part_id': 'file_' + str(uuid.uuid4()),
-                         'file_path': file} for file in file_paths]
-
-        response = self.requester.api_update_with_files(update)
-
-    def add_files_to_flow(self, file_paths, flow_id, comment=None):
-        if isinstance(file_paths, str):
-            file_paths = [file_paths]
-
-        if len(file_paths) == 0:
-            raise ValueError("file_paths must not be empty")
-
-        update = Update('posts')
-        update.flow_id = flow_id
-        update.id = str(uuid.uuid4())
-
-        # TODO: Comment not working on server.
-        if comment:
-            update.content = comment
-
-        update.files = [{'part_id': 'file_' + str(uuid.uuid4()),
-                         'file_path': file} for file in file_paths]
-    
-        response = self.requester.api_update_with_files(update)
+##### Internal Methods #####
 
     def _add_time_params(self, query, order_by, before, after):
         # TODO Allow inclusive, exclusive
@@ -251,27 +342,18 @@ class Api(object):
         # Index the flows to merge the data
         flows_idx = dict((flow.id, flow) for flow in flows)
 
-        users = dict((user['id'], User.from_json(user)) for user in data['users'])
-
-        if 'posts' in data:
-            posts = self._merge_post_data(data)
-            for post in posts:
-                flows_idx[post.flow_id].posts.append(post)
-
-
         # Associate users with flows via memberships
         if 'memberships' in data:
             for m in data['memberships']:
-                user, flow = users[m['user_id']], flows_idx[m['channel_id']]
-                flow.users.append(user)
                 if m['administrator']:
-                    flow.owner = user
+                    flow = flows_idx[m['channel_id']]
+                    flow.owner = m['user_id']
                          
         # Add invitations
         if 'invitations' in data:
             for i in data['invitations']:
-                flows_idx[i['channel_id']].invitations.append(
-                    Invitation(i['id'], i['email_address']))
+                flow = flows_idx[i['channel_id']]
+                flow.invitations.append(Invitation(i['id'], i['email_address']))
             
         return flows
 
@@ -282,8 +364,7 @@ class Api(object):
 
         # This list preserves the server order requested by the user
         posts = [self._create_post(post) for post in data['posts']]
-        users = dict((user['id'], User.from_json(user)) for user in data['users'])
-
+ 
         files = None
         comments = None
 
@@ -292,11 +373,8 @@ class Api(object):
 
         if 'comments' in data:
             comments = dict((comment['id'], Comment.from_json(comment)) for comment in data['comments'])
-            for comment in comments.itervalues():
-                comment.user = users[comment.user_id]
-
+ 
         for post in posts:
-            post.user = users[post.user_id]
             if files:
                 post.files = [files[id] for id in post.file_ids]
 
@@ -367,8 +445,8 @@ class Requester(object):
         update['key'] = self.key
         return self._request(update, timeout)
 
-    def api_update_with_files(self, update, timeout=300):
-        return self._request_with_files(update, timeout)
+    def api_update_with_files(self, update, file_paths, timeout=300):
+        return self._request_with_files(update, file_paths, timeout)
 
     def api_query(self, query, timeout=60):
         query['key'] = self.key
@@ -402,7 +480,7 @@ class Requester(object):
             
         return data
 
-    def _request_with_files(self, update, timeout=300):
+    def _request_with_files(self, update, file_paths, timeout=300):
 
         boundary = mimetools.choose_boundary()
         crlf = '\r\n'
@@ -413,14 +491,11 @@ class Requester(object):
         tmp.append('')
         tmp.append(self.key)
 
-        tmp.append('--' + boundary)
-        tmp.append('Content-Disposition: form-data; name="data"')
-        tmp.append('Content-Type: application/json; charset=UTF-8')
-        tmp.append('')
-        tmp.append(json.dumps(update['data']))
+        files = []
         
-        for f in update.files:
-            id, path = f['part_id'], f['file_path']
+        for path in file_paths:
+            id = 'file_' + str(uuid.uuid4())
+
             tmp.append('--' + boundary)
             tmp.append('Content-Disposition: form-data; name="{0}"; filename="{1}"'
                        .format(id, os.path.basename(path)))
@@ -428,6 +503,16 @@ class Requester(object):
                     mimetypes.guess_type(path)[0] or 'application/octet-stream'))
             tmp.append('')
             tmp.append(open(path, 'r').read())
+
+            files.append({'part_id': id})
+
+        update.files = files
+        tmp.append('--' + boundary)
+        tmp.append('Content-Disposition: form-data; name="data"')
+        tmp.append('Content-Type: application/json; charset=UTF-8')
+        tmp.append('')
+        tmp.append(json.dumps(update['data']))
+
 
         tmp.append('--' + boundary + '--')
         tmp.append('')
@@ -512,10 +597,8 @@ class Flow(object):
         self.quota_percentage = quota_percentage
         self.quota_count = int(quota_count)
         self.rss_url = rss_url
-        self.users = list()
         self.invitations = list()
-        self.owner = None
-
+        self.owner_id = None
                      
     def __hash__(self):
         return self.id.__hash__()
@@ -530,7 +613,7 @@ class Flow(object):
         return self.created_at > other.created_at
 
     def __str__(self):
-        return "Flow({0.id}): {0.name}".format(self)
+        return "Flow[{0.id}]: {0.name}".format(self)
 
     @classmethod
     def from_json(cls, data):
@@ -559,7 +642,7 @@ class User(object):
                  email=None, 
                  avatar_url=None,
                  online=False,
-                 role="user",
+                 role=None,
                  time_zone=None):
         self.id = id
         self.login = login
@@ -584,7 +667,7 @@ class User(object):
         return self.last_name > other.last_name
 
     def __str__(self):
-        return "User({0.id}): {0.first_name} {0.last_name}".format(self)
+        return "User[{0.id}]: {0.first_name} {0.last_name} <{0.email}>".format(self)
 
     @classmethod
     def from_json(cls, data):
@@ -601,7 +684,7 @@ class Invitation(object):
         return self.id.__hash__()
 
     def __str__(self):
-        return "Invitation({0.id}): {0.email}".format(self)
+        return "Invitation[{0.id}]: {0.email}".format(self)
 
 
 class File(object):
@@ -670,6 +753,10 @@ class File(object):
     def __gt__(self, other):
         return self.created_at > other.created_at
 
+    def __str__(self):
+        return "File[{0.id}]: {0.name}".format(self)
+
+
     @classmethod
     def from_json(cls, requester, data):
         return cls(requester, **dict([(str(k),v) for k,v in data.iteritems() 
@@ -705,9 +792,6 @@ class Comment(object):
         self.updated_at = iso8601.parse(updated_at) if updated_at else None
         self.user_id = user_id
 
-        self.user = None
-        self.post = None
-
     def __hash__(self):
         return self.id.__hash__()
 
@@ -719,6 +803,9 @@ class Comment(object):
 
     def __gt__(self, other):
         return self.created_at > other.created_at
+
+    def __str__(self):
+        return "Comment[{0.id}]: {0.user_id}".format(self)
 
     @classmethod
     def from_json(cls, data):
@@ -747,8 +834,8 @@ class Post(object):
                  flow_id=None,
                  flow_name=None,
                  post_type=None,
-                 reply_ids=[],
-                 file_ids=[],
+                 reply_ids=None,
+                 file_ids=None,
                  user_id=-1,
                  content=None,
                  star=None,
@@ -762,13 +849,12 @@ class Post(object):
         self.star = star
         self.created_at = iso8601.parse(created_at) if created_at else None
         self.updated_at = iso8601.parse(updated_at) if updated_at else None
-        self.reply_ids = set(reply_ids)
-        self.file_ids = set(file_ids)
+        self.reply_ids = reply_ids or []
+        self.file_ids = file_ids or []
         self.user_id = user_id
 
         self.files = list()
         self.comments = list()
-        self.user = None
 
     def is_map(self):
         return False
@@ -805,6 +891,9 @@ class Post(object):
 
     def __gt__(self, other):
         return self.created_at > other.created_at
+
+    def __str__(self):
+        return "Post[{0.id}]: {0.post_type} {0.user_id}".format(self)
 
     @classmethod
     def from_json(cls, data):
