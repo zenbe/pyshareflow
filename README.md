@@ -7,22 +7,31 @@ service.
 
 This library was tested with Python 2.6.
 
-Currently pyshareflow requires an API key. An API key can be obtained by
-sending a request to Zenbe via our [contact
-form](http://zenbe.com/contact).
+Currently pyshareflow requires an API auth token. Your auth token is
+displayed in the Shareflow interface. Select "All Flows" and click on
+"options".
 
-An API key is scoped to a user. This means that a user of this API
+Alternatively, you can supply your login credentials to retrieve the
+auth token via the API as demonstrated below.
+
+API requests are scoped to a user. This means that a user of this API
 only sees the flows and content they have access to. It also means
 that any posts or comments made via the API show up in the web
 interface with the user as the author.
 
 ## Operations ##
 
+### Getting an API token ###
+
+    >>> import pyshareflow
+    >>> auth_token = pyshareflow.Api.get_auth_token('username', 'password',
+    ...     'yourdomain.zenbe.com')
+
+
 ### Creating an API instance ###
 
     >>> import pyshareflow
-    >>>	api = pyshareflow.Api('biz.zenbe.com', 'yourdomain.zenbe.com',
-    >>>	'your key')
+    >>>	api = pyshareflow.Api('yourdomain.zenbe.com', 'auth token')
 
 ### Working with Users ###
 
@@ -47,11 +56,12 @@ Removes user 33 from the flow given by the flow id.
 
     >>> api.remove_user(33, 'flow id')
 
-#### User attributes ####
+### Users ###
 
-* `id`: An `int` id of the user `login`: The login name of the
-*user. Typically the same as the email
-  address.
+These are the attributes of `User` objects:
+
+* `id`: An `int` id of the user 
+* `login`: The login name of the user. Typically the same as the email address.
 * `first_name`: The first name
 * `last_name`: The last name
 * `email`: The user's email address
@@ -119,7 +129,7 @@ Deletes a flow. _Be careful!_ All data will be deleted.
     >>> api.delete_flow('flow id')
 
 
-#### Flow attributes ####
+### Flows ###
 
 * `id`: The UUID of the flow
 * `name`: The flow name
@@ -138,8 +148,9 @@ Deletes a flow. _Be careful!_ All data will be deleted.
 * `invitations`: A list of `Invitation` objects representing users who
   have not yet accepted an invitation to the flow
 * `owner_id`: The id of the user who created this flow.
+  
 
-#### Invitation attributes ####
+### Invitations ###
 
 * `id`: The uuid of the invitation
 * `email`: The email address for the invitation
@@ -237,7 +248,7 @@ Gets comments associated with a post. Only necessary if you specified
 
     >>> api.get_comments('post id')
 
-#### Post attributes ####
+### Posts ###
 
 There are a few different post sub-types. These are the attributes
 common to all posts.
@@ -255,27 +266,25 @@ common to all posts.
 * `user_id`: The id of the user responsible for this post
 * `files`: A `list` of `File` objects associated with this post
 * `comments`: A `list` of `Comment` objects associated with this post
-* `user_id`: The user id of the user who authored this post
-  
+* `user_id`: The user id of the user who authored this post  
 
-#### Post Subtypes ####
+### Post Subtypes ###
 
 There are a few subtypes of a `Post`:
 
-##### MapPost #####
+#### MapPost ####
 
 Returned when a map was posted.
 
 * `get_address()`: Returns the address of the map as a string.
 * `get_coordinates()`: Returns the latitude and longitude coordinates as
-  a tuple.
-  
+  a tuple.  
 
-##### FilePost #####
+#### FilePost ####
 
 This is the type of post for any post containing files.
 
-##### ImagePost #####
+#### ImagePost ####
 
 Indicates images are attached to this post. The corresponding `File`
 objects will include dimension information as well as a URL to the
@@ -290,18 +299,18 @@ files. To deal with this case:
     ...
     http://www.flicker.com/foo
 
-##### VideoPost #####
+#### VideoPost ####
 
 Indicates videos are attached to this post. This may also represent a
 video linked to on an external service (like YouTube or Hulu). In that
 case, use the `get_external_link()` method in the `ImagePost` example
 to get the link to the video content.
 
-##### HTMLPost #####
+#### HTMLPost ####
 
 Indicates the `content` field of the post is HTML.
 
-##### EmailPost #####
+#### EmailPost ####
 
 Indicates the post is an email. This type of post has a `msg`
 attribute, which points to a `File` object representing the message.
@@ -314,7 +323,7 @@ The following methods are also available:
 * `get_msg_content()`: Downloads the full content of the message.
   
 
-##### EventPost #####
+#### EventPost ####
 
 Indicates the post is an event. This type of post has a `event`
 attribute, which points to a `File` object representing the ICS
@@ -324,8 +333,7 @@ The following methods are also available:
 
 * `get_ics_content()`: Returns the ICS representation of the event
   
-
-#### Detecing Post Types ####
+### Detecing Post Types ###
 
 You can use `isinstance()` to detect post types. For convenience, all
 posts implement the following methods, which return a `boolean`:
@@ -340,7 +348,7 @@ posts implement the following methods, which return a `boolean`:
 * `is_event()`
   
 
-#### File attributes ####
+### Files ###
 
 The following are attributes of `File` objects:
 
@@ -366,7 +374,7 @@ Methods:
 * `retrieve()`: Returns the retrieved file content.
   
 
-#### Comment attributes ####
+### Comments ###
 
 Comments are associated with `Post` objects. They have the following
 attributes:

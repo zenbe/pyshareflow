@@ -1,36 +1,39 @@
 from datetime import datetime
 from xml.utils import iso8601
 import StringIO
-import collections
 import gzip
+import httplib
 import json
-import logging
 import mimetools
 import mimetypes
 import os.path
-import pprint
 import re
 import urllib
 import urllib2
 import uuid
-import httplib
-
-logging.basicConfig(level=logging.DEBUG,
-                    format='%(asctime)s %(levelname)s %(message)s')
-
-logger = logging.getLogger("pyshareflow")
 
 VERSION=2
+SERVER='api.zenbe.com'
 
-urllib2.install_opener(
-    urllib2.build_opener(
-        urllib2.ProxyHandler({'http': 'http://127.0.0.1:8080'})))
+# urllib2.install_opener(
+#     urllib2.build_opener(
+#         urllib2.ProxyHandler({'http': 'http://127.0.0.1:8080',
+#                               'https': 'http://127.0.0.1:8080'})))
 
 
 class Api(object):
-    def __init__(self, server, user_domain, key, version=2, use_ssl=False):
+    def __init__(self, user_domain, key, version=VERSION, use_ssl=False,
+                 server=SERVER):
         self.requester = Requester(server, user_domain, key, version, use_ssl)
 
+    @classmethod
+    def get_auth_token(cls, username, password, user_domain):
+        requester = Requester(SERVER, user_domain, use_ssl=True)
+        response = requester.get_auth_token(username, password)
+        if 'data' in response:
+            return response['data']['auth_token']
+        return None
+        
 
 ##### User Methods #####
 
@@ -400,7 +403,6 @@ class Api(object):
             }
 
         if not type in types:
-            logger.warn("Could not find post type {0}".format(type))
             return Post.from_json(post_data)
 
         return types[type].from_json(post_data)
@@ -437,22 +439,29 @@ class Update(dict):
 class Requester(object):
     USER_AGENT='pyshareflow APIv{0}'.format(VERSION)
 
-    def __init__(self, server, user_domain, key, version=VERSION, use_ssl=False):
+    def __init__(self, server, user_domain, key=None, version=VERSION, 
+                 use_ssl=False):
         protocol = 'https' if use_ssl else 'http'         
         self.base_url = "{0}://{1}/{2}".format(protocol, server, user_domain)
         self.api_url = "{0}/shareflow/api/v{1}.json".format(self.base_url, version)
+        self.auth_url = "{0}/shareflow/api/v{1}/auth.json".format(self.base_url, version)
         self.key = key
+
+    def get_auth_token(self, username, password):
+        return self._request({'login': username, 'password': password}, 
+                             self.auth_url)
 
     def api_update(self, update, timeout=60):
         update['key'] = self.key
-        return self._request(update, timeout)
+        return self._request(update, self.api_url, timeout)
 
     def api_update_with_files(self, update, file_paths, timeout=300):
-        return self._request_with_files(update, file_paths, timeout)
+        return self._request_with_files(update, file_paths, self.api_url,
+                                        timeout)
 
     def api_query(self, query, timeout=60):
         query['key'] = self.key
-        return self._request(query, timeout)
+        return self._request(query, self.api_url, timeout)
 
     def content_request(self, path, timeout=300):
         req = urllib2.Request(self.create_url(path), 
@@ -465,9 +474,9 @@ class Requester(object):
     def create_url(self, path):
         return "{0}{1}?key={2}".format(self.base_url, path, self.key)
 
-    def _request(self, params, timeout=60, requestobj=None):
+    def _request(self, params, url, timeout=60, requestobj=None):
 
-        req = requestobj or urllib2.Request(self.api_url, json.dumps(params),
+        req = requestobj or urllib2.Request(url, json.dumps(params),
                                             {'User-Agent': Requester.USER_AGENT,
                                              'Accept-Encoding': 'gzip',
                                              'Accept': 'application/json',
@@ -482,7 +491,7 @@ class Requester(object):
             
         return data
 
-    def _request_with_files(self, update, file_paths, timeout=300):
+    def _request_with_files(self, update, file_paths, url, timeout=300):
 
         boundary = mimetools.choose_boundary()
         crlf = '\r\n'
@@ -522,14 +531,14 @@ class Requester(object):
         body = crlf.join(tmp)
         content_type = 'multipart/form-data; boundary={0}'.format(boundary)
 
-        request = urllib2.Request(self.api_url, body,
-                                            {'User-Agent': Requester.USER_AGENT,
-                                             'Accept-Encoding': 'gzip',
-                                             'Accept': 'application/json',
-                                             'Content-Type': content_type,
-                                             'Content-Length': str(len(body))})
+        request = urllib2.Request(url, body,
+                                  {'User-Agent': Requester.USER_AGENT,
+                                   'Accept-Encoding': 'gzip',
+                                   'Accept': 'application/json',
+                                   'Content-Type': content_type,
+                                   'Content-Length': str(len(body))})
 
-        return self._request(None, timeout=timeout, requestobj=request)
+        return self._request(None, None, timeout=timeout, requestobj=request)
                        
 
     def _check_error(self, error):
