@@ -26,26 +26,26 @@ interface with the user as the author.
 
 ### Working with Users ###
 
-    >>> api.get_users()
-
 Gets up to 50 users associated with any flow you are a member of.
 Returns an array of `User` objects.
 
-    >>> api.get_users(offset=50)
+    >>> api.get_users()
 
 Gets the next 50 users associated with any flow you are a member of.
 
-    >>> api.get_users(flow_id='flow id')
+    >>> api.get_users(offset=50)
 
 Gets up to 50 users associated with the flow given by the id.
 
-    >>> api.get_user(33)
+    >>> api.get_users(flow_id='flow id')
 
 Returns a `User` object associated with user 33.
 
-    >>> api.remove_user(33, 'flow id')
+    >>> api.get_user(33)
 
 Removes user 33 from the flow given by the flow id.
+
+    >>> api.remove_user(33, 'flow id')
 
 #### User attributes ####
 
@@ -62,61 +62,61 @@ Removes user 33 from the flow given by the flow id.
 
 ### Working with Flows ###
 
-    >>> flows = api.get_flows()
-
 Retrieves an array of Flow objects, ordered by created at time. There
 his a default limit of 30 flows, and a max limit of 100 flows.
 
-    >>> flows = api.get_flows(limit=100, order_by='updated')
+    >>> flows = api.get_flows()
 
 Returns up to 100 flows, ordered by when the flow was last updated.
 
-    >>> flows = api.get_flows(offset=100, limit=100)
+    >>> flows = api.get_flows(limit=100, order_by='updated')
 
 Returns up to 100 flows, offset by 100.
+
+    >>> flows = api.get_flows(offset=100, limit=100)
+
+Returns a list of all flows matching a particular name.
 
     >>> flows = api.get_flows(name='My Shareflow')
     >>> flows[0].name
     'My Shareflow'
 
-Returns a list of all flows matching a particular name.
-
-    >>> flows = api.get_flow_by_name('My Shareflow')
-
 A convenience method that returns a single flow matching the given
 name. If multiple flows match only the first will be returned.
 
-    >>> new_flow = api.create_flow('My New Flow')
+    >>> flows = api.get_flow_by_name('My Shareflow')
 
 Create a new flow named 'My New Flow'. Returns the `Flow` object that
 was created.
 
-    >>> updated_flow = api.update_flow_name('New Flow Name', 'flow_id')
+    >>> new_flow = api.create_flow('My New Flow')
 
 Renames the flow with the given flow id and returns the new flow
 object.
 
-    >>> api.create_invitations('flow id', 'bob@example.com')
+    >>> updated_flow = api.update_flow_name('New Flow Name', 'flow_id')
 
 Invites a user to the flow. This sends an invitation email to the
 user.
 
-    >>> api.create_invitations('flow id', ['bob@example.com', sue@example.com'])
+    >>> api.create_invitations('flow id', 'bob@example.com')
 
 Invites all the email addresses specified in the array to the flow.
 
-    >>> api.create_invitations('flow id', "Bob Smith <bob@example.com>")
+    >>> api.create_invitations('flow id', ['bob@example.com', sue@example.com'])
 
 An invitation using an RFC2822 compliant email address.
 
-    >>> api.delete_invitations('flow id', 'bob@example.com')
+    >>> api.create_invitations('flow id', "Bob Smith <bob@example.com>")
 
 Deletes an invited user from a flow. The array syntax may also be used
 to uninvite multiple invitees.
 
-    >>> api.delete_flow('flow id')
+    >>> api.delete_invitations('flow id', 'bob@example.com')
 
 Deletes a flow. _Be careful!_ All data will be deleted.
+
+    >>> api.delete_flow('flow id')
 
 
 #### Flow attributes ####
@@ -146,97 +146,96 @@ Deletes a flow. _Be careful!_ All data will be deleted.
 
 ### Working with Posts ###
 
-    >>> api.get_posts()
-
 Retrieves the latest 30 posts across all flows, sorted by created at
 time.
 
-    >>> api.get_posts(offset=30)
+    >>> api.get_posts()
 
 Returns the next 30 posts.
 
-    >>> api.get_posts(limit=100, flow_id='flow id', order_by='updated)
+    >>> api.get_posts(offset=30)
 
 Gets at most 100 posts for the given flow id, ordered by updated time.
 
-    >>> api.get_posts(flow_id='flow id', include_comments=False, order_by='updated')
+    >>> api.get_posts(limit=100, flow_id='flow id', order_by='updated)
 
 Gets the most recently updated 30 posts across flows, but excludes
 comments.
 
-    >>> api.get_posts(before=datetimeobj)
+    >>> api.get_posts(flow_id='flow id', include_comments=False, order_by='updated')
 
 Gets the 30 posts created before the given `datetime` object.
 
-    >>> api.get_posts(after=datetimeobj, order_by='updated')
+    >>> api.get_posts(before=datetimeobj)
 
 Gets any posts updated after the given `datetime` object. This query
 is useful for checking for new activity.
 
-    >>> api.get_posts(before=begin, after=end)
+    >>> api.get_posts(after=datetimeobj, order_by='updated')
 
 Gets the posts in between the two dates. This is an exclusive
 operation.
 
-    >>> api.get_posts(search_term='presentation')
+    >>> api.get_posts(before=begin, after=end)
 
 Gets any posts matching the term 'presentation'. Will also search
 comments, unless `include_comments=False`.
 
-    >>> api.get_posts(flow_id='flow id', search_term='presentation')
+    >>> api.get_posts(search_term='presentation')
 
 Executes the preceding search, but restricts it to a particular flow.
 
 _Note_: For convenience there is also an `api.search(search_term)`
 method.
 
-    >>> api.post_files(r'C:\docs\planning.doc', 'flow_id')
+    >>> api.get_posts(flow_id='flow id', search_term='presentation')
 
 Uploads a file to the flow given by the flow id. Creates a new post.
+
+    >>> api.post_files(r'C:\docs\planning.doc', 'flow_id')
+
+Adds multiple files to the flow given by the flow id.
 
     >>> api.post_files([r'C:\docs\planning.doc', 
     ...	    r'C:\docs\schedule.xls'], 'flow_id')
 
-Adds multiple files to the flow given by the flow id.
+Adds multiple files to the flow given by the id along with a comment
+that will appear with the files.
 
     >>> api.post_files([r'C:\docs\planning.doc',
     ...    r'C:\docs\schedule.xls'], 'flow_id',
     ...    comment='Here are the files for the upcoming meeting.')
 
-Adds multiple files to the flow given by the id along with a comment
-that will appear with the files.
+Adds file(s) to an existing post given by 'post_id'.
 
     >>> api.add_files_to_post(r'C:\docs\planning.doc', 'post_id')
 
-Adds file(s) to an existing post given by 'post_id'.
-
-    >>> api.create_post('flow_id', 'This is some post content.')
-
 Creates a post on the flow given by the id.
 
-    >>> api.update_post('post_id', 'New post content.')
+    >>> api.create_post('flow_id', 'This is some post content.')
 
 Updates the post with the given id with the new content. Returns the
 updated `Post` object.
 
-    >>> api.create_comment('post_id', 'This is a comment.')
+    >>> api.update_post('post_id', 'New post content.')
 
 Creates a comment associated with the post with the given id.
 
-    >>> api.delete_comment('comment_id')
+    >>> api.create_comment('post_id', 'This is a comment.')
 
 Deletes the comment with the given id.
 
-    >>> api.delete_post('post id')
+    >>> api.delete_comment('comment_id')
 
 Permanently deletes the post (and any associated files and comments)
 with the given id.
 
-    >>> api.get_comments('post id')
+    >>> api.delete_post('post id')
 
 Gets comments associated with a post. Only necessary if you specified
 `include_comments=False` when fetching the post.
 
+    >>> api.get_comments('post id')
 
 #### Post attributes ####
 
