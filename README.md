@@ -5,7 +5,7 @@
 This is a simple python library to interface with Zenbe's Shareflow
 service.
 
-The library was coded against Python 2.6.2.
+This library was tested with Python 2.6.
 
 Currently pyshareflow requires an API key. An API key can be obtained by
 sending a request to Zenbe via our [contact
@@ -16,60 +16,36 @@ only sees the flows and content they have access to. It also means
 that any posts or comments made via the API show up in the web
 interface with the user as the author.
 
-
-
 ## Operations ##
 
 ### Creating an API instance ###
 
     >>> import pyshareflow
-    >>>	api = pyshareflow.Api('biz.zenbe.com', 'yourdomain.zenbe.com', 'your key')
+    >>>	api = pyshareflow.Api('biz.zenbe.com', 'yourdomain.zenbe.com',
+    >>>	'your key')
 
-### Retrieving Flows ###
+### Working with Users ###
 
-    >>> flows = api.get_flows()
+    >>> api.get_users()
 
-Retrieves an array of Flow objects, ordered by created at time. There
-his a default limit of 30 flows, and a max limit of 100 flows.
+Gets up to 50 users associated with any flow you are a member of.
+Returns an array of `User` objects.
 
-    >>> flows = api.get_flows(limit=100, order_by='created')
+    >>> api.get_users(offset=50)
 
-Returns up to 100 flows, ordered by when the flow was last updated.
+Gets the next 50 users associated with any flow you are a member of.
 
-    >>> flows = api.get_flows(name='My Shareflow')
-    >>> flows[0].name
-    'My Shareflow'
+    >>> api.get_users(flow_id='flow id')
 
-Returns a list of all flows matching a particular name.
+Gets up to 50 users associated with the flow given by the id.
 
-    >>> flows = api.get_flow_by_name('My Shareflow')
+    >>> api.get_user(33)
 
-A convenience method that returns a single flow matching the given
-name. If multiple flows match only the first will be returned.
+Returns a `User` object associated with user 33.
 
-#### Flow attributes ####
+    >>> api.remove_user(33, 'flow id')
 
-* `id`: The UUID of the flow
-* `name`: The flow name
-* `email_address`: The email address of the flow. Emails sent here show
-  up on the flow
-* `created_at`: A `datetime` object representing the flow creation time
-* `updated_at`: A `datetime` object representing the flow update time
-* `is_default`: A `boolean` indicating if the flow is your team's
-  default flow
-* `owner_name`: The creator of the flow
-* `quota_percentage`: A `float` indicating the percentage of total
-  storage space used by this flow.
-* `quota_count`: An `int` representing the bytes used by this flow
-* `rss_url`: The URL containing the RSS feed for this flow.
-* `users`: A list of `User` objects representing who has accepted an
-  invitation to this flow. See the description of `User` below.
-* `invitations`: A list of `Invitation` objects representing users who
-  have not yet accepted an invitation to the flow
-* `owner`: A `User` object representing the owner of the flow
-
-_Note_: Posts are not attached to flows. The are retrieved separately
-as described below.
+Removes user 33 from the flow given by the flow id.
 
 #### User attributes ####
 
@@ -84,17 +60,36 @@ as described below.
   now
 * `time_zone`: The time zone string for the user
 
-  
-#### Invitation attributes ####
+### Working with Flows ###
 
-* `id`: The uuid of the invitation
-* `Email`: The email address for the invitation
+    >>> flows = api.get_flows()
 
-### Creating flows ###
+Retrieves an array of Flow objects, ordered by created at time. There
+his a default limit of 30 flows, and a max limit of 100 flows.
+
+    >>> flows = api.get_flows(limit=100, order_by='updated')
+
+Returns up to 100 flows, ordered by when the flow was last updated.
+
+    >>> flows = api.get_flows(offset=100, limit=100)
+
+Returns up to 100 flows, offset by 100.
+
+    >>> flows = api.get_flows(name='My Shareflow')
+    >>> flows[0].name
+    'My Shareflow'
+
+Returns a list of all flows matching a particular name.
+
+    >>> flows = api.get_flow_by_name('My Shareflow')
+
+A convenience method that returns a single flow matching the given
+name. If multiple flows match only the first will be returned.
 
     >>> new_flow = api.create_flow('My New Flow')
 
-### Modifying flows ###
+Create a new flow named 'My New Flow'. Returns the `Flow` object that
+was created.
 
     >>> updated_flow = api.update_flow_name('New Flow Name', 'flow_id')
 
@@ -119,18 +114,46 @@ An invitation using an RFC2822 compliant email address.
 Deletes an invited user from a flow. The array syntax may also be used
 to uninvite multiple invitees.
 
-### Deleting flows ###
-
     >>> api.delete_flow('flow id')
 
 Deletes a flow. _Be careful!_ All data will be deleted.
 
-### Retrieving Posts ###
+
+#### Flow attributes ####
+
+* `id`: The UUID of the flow
+* `name`: The flow name
+* `email_address`: The email address of the flow. Emails sent here show
+  up on the flow
+* `created_at`: A `datetime` object representing the flow creation time
+* `updated_at`: A `datetime` object representing the flow update time
+* `is_default`: A `boolean` indicating if the flow is your team's
+  default flow
+* `owner_name`: The creator of the flow
+* `quota_percentage`: A `float` indicating the percentage of total
+  storage space used by this flow.
+* `quota_count`: An `int` representing the bytes used by this flow
+* `rss_url`: The URL containing the RSS feed for this flow.
+  invitation to this flow. See the description of `User` below.
+* `invitations`: A list of `Invitation` objects representing users who
+  have not yet accepted an invitation to the flow
+* `owner_id`: The id of the user who created this flow.
+
+#### Invitation attributes ####
+
+* `id`: The uuid of the invitation
+* `email`: The email address for the invitation
+
+### Working with Posts ###
 
     >>> api.get_posts()
 
 Retrieves the latest 30 posts across all flows, sorted by created at
 time.
+
+    >>> api.get_posts(offset=30)
+
+Returns the next 30 posts.
 
     >>> api.get_posts(limit=100, flow_id='flow id', order_by='updated)
 
@@ -167,6 +190,54 @@ Executes the preceding search, but restricts it to a particular flow.
 _Note_: For convenience there is also an `api.search(search_term)`
 method.
 
+    >>> api.post_files(r'C:\docs\planning.doc', 'flow_id')
+
+Uploads a file to the flow given by the flow id. Creates a new post.
+
+    >>> api.post_files([r'C:\docs\planning.doc', 
+    ...	    r'C:\docs\schedule.xls'], 'flow_id')
+
+Adds multiple files to the flow given by the flow id.
+
+    >>> api.post_files([r'C:\docs\planning.doc',
+    ...    r'C:\docs\schedule.xls'], 'flow_id',
+    ...    comment='Here are the files for the upcoming meeting.')
+
+Adds multiple files to the flow given by the id along with a comment
+that will appear with the files.
+
+    >>> api.add_files_to_post(r'C:\docs\planning.doc', 'post_id')
+
+Adds file(s) to an existing post given by 'post_id'.
+
+    >>> api.create_post('flow_id', 'This is some post content.')
+
+Creates a post on the flow given by the id.
+
+    >>> api.update_post('post_id', 'New post content.')
+
+Updates the post with the given id with the new content. Returns the
+updated `Post` object.
+
+    >>> api.create_comment('post_id', 'This is a comment.')
+
+Creates a comment associated with the post with the given id.
+
+    >>> api.delete_comment('comment_id')
+
+Deletes the comment with the given id.
+
+    >>> api.delete_post('post id')
+
+Permanently deletes the post (and any associated files and comments)
+with the given id.
+
+    >>> api.get_comments('post id')
+
+Gets comments associated with a post. Only necessary if you specified
+`include_comments=False` when fetching the post.
+
+
 #### Post attributes ####
 
 There are a few different post sub-types. These are the attributes
@@ -185,7 +256,7 @@ common to all posts.
 * `user_id`: The id of the user responsible for this post
 * `files`: A `list` of `File` objects associated with this post
 * `comments`: A `list` of `Comment` objects associated with this post
-* `user`: A `User` object representing the user responsible for this post
+* `user_id`: The user id of the user who authored this post
   
 
 #### Post Subtypes ####
@@ -309,56 +380,6 @@ attributes:
 * `created_at`: A `datetime` object representing the creation time
 * `updated_at`: A `datetime` object representing the update time
 * `user_id`: The id of the user associated with this comment
-* `user`: The `User` object of the user associated with this comment
-* `post`: The `Post` this comment is in reply to
-
-### Creating a Post ###
-
-    >>> api.create_post('flow_id', 'This is some post content.')
-
-Creates a post on the flow given by the id.
-
-### Modifying Posts ###
-
-    >>> api.update_post('post_id', 'New post content.')
-
-Updates the post with the given id with the new content. Returns the
-updated `Post` object.
-
-    >>> api.create_comment('post_id', 'This is a comment.')
-
-Creates a comment associated with the post with the given id.
-
-    >>> api.delete_comment('comment_id')
-
-Deletes the comment with the given id.
-
-### Deleting Posts ###
-
-    >>> api.delete_post('post id')
-
-Permanently deletes the post (and any associated files and comments)
-with the given id.
-
-### Uploading Files ###
-
-    >>> api.add_files_to_flow(r'C:\docs\planning.doc', 'flow_id')
-
-Adds a file to the flow given by the id.
-
-    >>> api.add_files_to_flow([r'C:\docs\planning.doc', r'C:\docs\schedule.xls'], 'flow_id')
-
-Adds multiple files to the flow given by the id.
-
-    >>> api.add_files_to_flow([r'C:\docs\planning.doc', r'C:\docs\schedule.xls'], 'flow_id',
-    ...     comment='Here are the files for the upcoming meeting.')
-
-Adds multiple files to the flow given by the id along with a comment
-that will appear with the files.
-
-    >>> api.add_files_to_post(r'C:\docs\planning.doc', 'post_id')
-
-Adds file(s) to an existing post given by 'post_id'.
 
 ## Exceptions ##
 
@@ -384,7 +405,6 @@ our part.
 
 ## TODO ##
 
-* Sync up documentation
 * Implement a streaming file retrieve() operation
 * Implement permalink attribute for Flows, Posts, Comments
 * Add event posting

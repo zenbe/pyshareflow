@@ -34,7 +34,7 @@ class Api(object):
 
 ##### User Methods #####
 
-    def get_users(self, flow_id=None, offset=None):
+    def get_users(self, flow_id=None, offset=None, limit=50):
         query = None
 
         if flow_id:
@@ -46,6 +46,8 @@ class Api(object):
         
         if offset:
             query.offset = offset
+
+        query.limit = limit
 
         response = self.requester.api_query(query)
 
