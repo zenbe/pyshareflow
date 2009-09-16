@@ -70,9 +70,7 @@ if feed.entry:
                         '{0}.{1}'.format(title.lower().replace(' ', '_'), 
                                          EXTENSIONS[type]))
 
-    is_spreadsheet = type == 'spreadsheet'
-
-    if is_spreadsheet:
+    if type == 'spreadsheet':
         # Get an auth token for the spreadsheet service and swap if
         # for the one we currently use
         ss_client = gdata.spreadsheet.service.SpreadsheetsService()
@@ -98,12 +96,12 @@ if feed.entry:
             print "Uploading {0} to flow {1}".format(title, flow.name)
             shareflow.post_files(path, flow.id, comment=msg)
         else:
-            print sys.exit("Could not find a flow named {0}".format(options.flow))
+            sys.exit("Could not find a flow named {0}".format(options.flow))
 
     finally:
         os.remove(path)
     
 else:
-    print sys.exit("Could not find a Google Doc named {0}".format(options.doc))
+    sys.exit("Could not find a Google Doc named {0}".format(options.doc))
 
     
