@@ -500,7 +500,7 @@ class Requester(object):
         tmp.append('Content-Disposition: form-data; name="key"')
         tmp.append('Content-Type: application/json; charset=UTF-8')
         tmp.append('')
-        tmp.append(self.key)
+        tmp.append(str(self.key))
 
         files = []
         
@@ -523,7 +523,6 @@ class Requester(object):
         tmp.append('Content-Type: application/json; charset=UTF-8')
         tmp.append('')
         tmp.append(json.dumps(update['data']))
-
 
         tmp.append('--' + boundary + '--')
         tmp.append('')
