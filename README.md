@@ -5,8 +5,6 @@
 This is a simple python library to interface with Zenbe's Shareflow
 service.
 
-This library was tested with Python 2.6.
-
 Currently pyshareflow requires an API auth token. Your auth token is
 displayed in the Shareflow interface. Select "All Flows" and click on
 "options".
@@ -18,6 +16,21 @@ API requests are scoped to a user. This means that a user of this API
 only sees the flows and content they have access to. It also means
 that any posts or comments made via the API show up in the web
 interface with the user as the author.
+
+## Requirements ##
+
+You need a [Shareflow account](http://getshareflow.com).
+
+You need a Python 2.6 interpreter.
+
+You need xml.utils.iso8601 available on your machine. On Debian/Ubuntu
+installations this is available as part of the python-xml package:
+
+    >> apt-get install python-xml
+
+On other platforms you can use the [PyXML package](http://pypi.python.org/pypi/PyXML/0.8.4):
+
+    >> easy_install pyxml
 
 ## Operations ##
 
@@ -60,7 +73,7 @@ Removes user 33 from the flow given by the flow id.
 
 These are the attributes of `User` objects:
 
-* `id`: An `int` id of the user 
+* `id`: An `int` id of the user
 * `login`: The login name of the user. Typically the same as the email address.
 * `first_name`: The first name
 * `last_name`: The last name
@@ -148,7 +161,7 @@ Deletes a flow. _Be careful!_ All data will be deleted.
 * `invitations`: A list of `Invitation` objects representing users who
   have not yet accepted an invitation to the flow
 * `owner_id`: The id of the user who created this flow.
-  
+
 
 ### Invitations ###
 
@@ -207,7 +220,7 @@ Uploads a file to the flow given by the flow id. Creates a new post.
 
 Adds multiple files to the flow given by the flow id.
 
-    >>> api.post_files([r'C:\docs\planning.doc', 
+    >>> api.post_files([r'C:\docs\planning.doc',
     ...	    r'C:\docs\schedule.xls'], 'flow_id')
 
 Adds multiple files to the flow given by the id along with a comment
@@ -266,7 +279,7 @@ common to all posts.
 * `user_id`: The id of the user responsible for this post
 * `files`: A `list` of `File` objects associated with this post
 * `comments`: A `list` of `Comment` objects associated with this post
-* `user_id`: The user id of the user who authored this post  
+* `user_id`: The user id of the user who authored this post
 
 ### Post Subtypes ###
 
@@ -278,7 +291,7 @@ Returned when a map was posted.
 
 * `get_address()`: Returns the address of the map as a string.
 * `get_coordinates()`: Returns the latitude and longitude coordinates as
-  a tuple.  
+  a tuple.
 
 #### FilePost ####
 
@@ -321,7 +334,7 @@ The following methods are also available:
 * `get_subject()`: Returns the subject of the message.
 * `get_summary()`: Returns a 255 character preview of the message.
 * `get_msg_content()`: Downloads the full content of the message.
-  
+
 
 #### EventPost ####
 
@@ -332,7 +345,7 @@ representation of the event.
 The following methods are also available:
 
 * `get_ics_content()`: Returns the ICS representation of the event
-  
+
 ### Detecing Post Types ###
 
 You can use `isinstance()` to detect post types. For convenience, all
@@ -346,7 +359,7 @@ posts implement the following methods, which return a `boolean`:
 * `is_video()`
 * `is_html()`
 * `is_event()`
-  
+
 
 ### Files ###
 
@@ -372,7 +385,7 @@ The following are attributes of `File` objects:
 Methods:
 
 * `retrieve()`: Returns the retrieved file content.
-  
+
 
 ### Comments ###
 
